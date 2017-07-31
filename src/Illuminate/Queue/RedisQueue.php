@@ -134,12 +134,16 @@ class RedisQueue extends Queue implements QueueContract
      *
      * @param  string  $job
      * @param  mixed   $data
+<<<<<<< HEAD
      * @param  string  $queue
      * @return array
+=======
+     * @return string
+>>>>>>> 2aa5ea8a898bd220015ab9be453b36723ffb186e
      */
-    protected function createPayloadArray($job, $data = '', $queue = null)
+    protected function createPayloadArray($job, $data = '')
     {
-        return array_merge(parent::createPayloadArray($job, $data, $queue), [
+        return array_merge(parent::createPayloadArray($job, $data), [
             'id' => $this->getRandomId(),
             'attempts' => 0,
         ]);
@@ -254,7 +258,7 @@ class RedisQueue extends Queue implements QueueContract
      * @param  string|null  $queue
      * @return string
      */
-    protected function getQueue($queue)
+    public function getQueue($queue)
     {
         return 'queues:'.($queue ?: $this->default);
     }

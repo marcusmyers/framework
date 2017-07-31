@@ -541,7 +541,9 @@ class Request extends SymfonyRequest implements Arrayable, ArrayAccess
      */
     public function offsetExists($offset)
     {
-        return array_key_exists($offset, $this->all());
+        return array_key_exists(
+            $offset, $this->all() + $this->route()->parameters()
+        );
     }
 
     /**
@@ -552,7 +554,7 @@ class Request extends SymfonyRequest implements Arrayable, ArrayAccess
      */
     public function offsetGet($offset)
     {
-        return data_get($this->all(), $offset);
+        return $this->__get($offset);
     }
 
     /**
@@ -597,8 +599,8 @@ class Request extends SymfonyRequest implements Arrayable, ArrayAccess
      */
     public function __get($key)
     {
-        if ($this->offsetExists($key)) {
-            return $this->offsetGet($key);
+        if (array_key_exists($key, $this->all())) {
+            return data_get($this->all(), $key);
         }
 
         return $this->route($key);
