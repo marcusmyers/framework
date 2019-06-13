@@ -6,7 +6,6 @@ use ReflectionClass;
 use ReflectionProperty;
 use Illuminate\Support\Arr;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\Job;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
@@ -69,6 +68,8 @@ class BroadcastEvent implements ShouldQueue
         foreach ((new ReflectionClass($event))->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
             $payload[$property->getName()] = $this->formatProperty($property->getValue($event));
         }
+
+        unset($payload['broadcastQueue']);
 
         return $payload;
     }

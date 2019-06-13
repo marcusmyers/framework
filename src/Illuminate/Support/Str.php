@@ -2,7 +2,11 @@
 
 namespace Illuminate\Support;
 
+use Ramsey\Uuid\Uuid;
+use Ramsey\Uuid\UuidFactory;
 use Illuminate\Support\Traits\Macroable;
+use Ramsey\Uuid\Generator\CombGenerator;
+use Ramsey\Uuid\Codec\TimestampFirstCombCodec;
 
 class Str
 {
@@ -30,6 +34,18 @@ class Str
     protected static $studlyCache = [];
 
     /**
+     * Return the remainder of a string after a given value.
+     *
+     * @param  string  $subject
+     * @param  string  $search
+     * @return string
+     */
+    public static function after($subject, $search)
+    {
+        return $search === '' ? $subject : array_reverse(explode($search, $subject, 2))[0];
+    }
+
+    /**
      * Transliterate a UTF-8 value to ASCII.
      *
      * @param  string  $value
@@ -49,6 +65,18 @@ class Str
         }
 
         return preg_replace('/[^\x20-\x7E]/u', '', $value);
+    }
+
+    /**
+     * Get the portion of a string before a given value.
+     *
+     * @param  string  $subject
+     * @param  string  $search
+     * @return string
+     */
+    public static function before($subject, $search)
+    {
+        return $search === '' ? $subject : explode($search, $subject)[0];
     }
 
     /**
@@ -76,7 +104,7 @@ class Str
     public static function contains($haystack, $needles)
     {
         foreach ((array) $needles as $needle) {
-            if ($needle != '' && mb_strpos($haystack, $needle) !== false) {
+            if ($needle !== '' && mb_strpos($haystack, $needle) !== false) {
                 return true;
             }
         }
@@ -119,24 +147,39 @@ class Str
     /**
      * Determine if a given string matches a given pattern.
      *
-     * @param  string  $pattern
+     * @param  string|array  $pattern
      * @param  string  $value
      * @return bool
      */
     public static function is($pattern, $value)
     {
-        if ($pattern == $value) {
-            return true;
+        $patterns = Arr::wrap($pattern);
+
+        if (empty($patterns)) {
+            return false;
         }
 
-        $pattern = preg_quote($pattern, '#');
+        foreach ($patterns as $pattern) {
+            // If the given value is an exact match we can of course return true right
+            // from the beginning. Otherwise, we will translate asterisks and do an
+            // actual pattern match against the two strings to see if they match.
+            if ($pattern == $value) {
+                return true;
+            }
 
-        // Asterisks are translated into zero-or-more regular expression wildcards
-        // to make it convenient to check if the strings starts with the given
-        // pattern such as "library/*", making any string check convenient.
-        $pattern = str_replace('\*', '.*', $pattern);
+            $pattern = preg_quote($pattern, '#');
 
-        return (bool) preg_match('#^'.$pattern.'\z#u', $value);
+            // Asterisks are translated into zero-or-more regular expression wildcards
+            // to make it convenient to check if the strings starts with the given
+            // pattern such as "library/*", making any string check convenient.
+            $pattern = str_replace('\*', '.*', $pattern);
+
+            if (preg_match('#^'.$pattern.'\z#u', $value) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -238,6 +281,22 @@ class Str
     }
 
     /**
+     * Pluralize the last word of an English, studly caps case string.
+     *
+     * @param  string  $value
+     * @param  int     $count
+     * @return string
+     */
+    public static function pluralStudly($value, $count = 2)
+    {
+        $parts = preg_split('/(.)(?=[A-Z])/u', $value, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+        $lastWord = array_pop($parts);
+
+        return implode('', $parts).self::plural($lastWord, $count);
+    }
+
+    /**
      * Generate a more truly "random" alpha-numeric string.
      *
      * @param  int  $length
@@ -268,11 +327,15 @@ class Str
      */
     public static function replaceArray($search, array $replace, $subject)
     {
-        foreach ($replace as $value) {
-            $subject = static::replaceFirst($search, $value, $subject);
+        $segments = explode($search, $subject);
+
+        $result = array_shift($segments);
+
+        foreach ($segments as $segment) {
+            $result .= (array_shift($replace) ?? $search).$segment;
         }
 
-        return $subject;
+        return $result;
     }
 
     /**
@@ -285,6 +348,10 @@ class Str
      */
     public static function replaceFirst($search, $replace, $subject)
     {
+        if ($search == '') {
+            return $subject;
+        }
+
         $position = strpos($subject, $search);
 
         if ($position !== false) {
@@ -311,6 +378,20 @@ class Str
         }
 
         return $subject;
+    }
+
+    /**
+     * Begin a string with a single instance of a given value.
+     *
+     * @param  string  $value
+     * @param  string  $prefix
+     * @return string
+     */
+    public static function start($value, $prefix)
+    {
+        $quoted = preg_quote($prefix, '/');
+
+        return $prefix.preg_replace('/^(?:'.$quoted.')+/u', '', $value);
     }
 
     /**
@@ -351,15 +432,15 @@ class Str
      *
      * @param  string  $title
      * @param  string  $separator
-     * @param  string  $language
+     * @param  string|null  $language
      * @return string
      */
     public static function slug($title, $separator = '-', $language = 'en')
     {
-        $title = static::ascii($title, $language);
+        $title = $language ? static::ascii($title, $language) : $title;
 
         // Convert all dashes/underscores into separator
-        $flip = $separator == '-' ? '_' : '-';
+        $flip = $separator === '-' ? '_' : '-';
 
         $title = preg_replace('!['.preg_quote($flip).']+!u', $separator, $title);
 
@@ -367,7 +448,7 @@ class Str
         $title = str_replace('@', $separator.'at'.$separator, $title);
 
         // Remove all characters that are not the separator, letters, numbers, or whitespace.
-        $title = preg_replace('![^'.preg_quote($separator).'\pL\pN\s]+!u', '', mb_strtolower($title));
+        $title = preg_replace('![^'.preg_quote($separator).'\pL\pN\s]+!u', '', static::lower($title));
 
         // Replace all separator characters and whitespace by a single separator
         $title = preg_replace('!['.preg_quote($separator).'\s]+!u', $separator, $title);
@@ -409,7 +490,7 @@ class Str
     public static function startsWith($haystack, $needles)
     {
         foreach ((array) $needles as $needle) {
-            if ($needle != '' && substr($haystack, 0, strlen($needle)) === (string) $needle) {
+            if ($needle !== '' && substr($haystack, 0, strlen($needle)) === (string) $needle) {
                 return true;
             }
         }
@@ -461,11 +542,42 @@ class Str
     }
 
     /**
+     * Generate a UUID (version 4).
+     *
+     * @return \Ramsey\Uuid\UuidInterface
+     */
+    public static function uuid()
+    {
+        return Uuid::uuid4();
+    }
+
+    /**
+     * Generate a time-ordered UUID (version 4).
+     *
+     * @return \Ramsey\Uuid\UuidInterface
+     */
+    public static function orderedUuid()
+    {
+        $factory = new UuidFactory;
+
+        $factory->setRandomGenerator(new CombGenerator(
+            $factory->getRandomGenerator(),
+            $factory->getNumberConverter()
+        ));
+
+        $factory->setCodec(new TimestampFirstCombCodec(
+            $factory->getUuidBuilder()
+        ));
+
+        return $factory->uuid4();
+    }
+
+    /**
      * Returns the replacements for the ascii method.
      *
      * Note: Adapted from Stringy\Stringy.
      *
-     * @see https://github.com/danielstjules/Stringy/blob/3.0.1/LICENSE.txt
+     * @see https://github.com/danielstjules/Stringy/blob/3.1.0/LICENSE.txt
      *
      * @return array
      */
@@ -489,7 +601,7 @@ class Str
             '8'    => ['⁸', '₈', '۸', '８'],
             '9'    => ['⁹', '₉', '۹', '９'],
             'a'    => ['à', 'á', 'ả', 'ã', 'ạ', 'ă', 'ắ', 'ằ', 'ẳ', 'ẵ', 'ặ', 'â', 'ấ', 'ầ', 'ẩ', 'ẫ', 'ậ', 'ā', 'ą', 'å', 'α', 'ά', 'ἀ', 'ἁ', 'ἂ', 'ἃ', 'ἄ', 'ἅ', 'ἆ', 'ἇ', 'ᾀ', 'ᾁ', 'ᾂ', 'ᾃ', 'ᾄ', 'ᾅ', 'ᾆ', 'ᾇ', 'ὰ', 'ά', 'ᾰ', 'ᾱ', 'ᾲ', 'ᾳ', 'ᾴ', 'ᾶ', 'ᾷ', 'а', 'أ', 'အ', 'ာ', 'ါ', 'ǻ', 'ǎ', 'ª', 'ა', 'अ', 'ا', 'ａ', 'ä'],
-            'b'    => ['б', 'β', 'Ъ', 'Ь', 'ب', 'ဗ', 'ბ', 'ｂ'],
+            'b'    => ['б', 'β', 'ب', 'ဗ', 'ბ', 'ｂ'],
             'c'    => ['ç', 'ć', 'č', 'ĉ', 'ċ', 'ｃ'],
             'd'    => ['ď', 'ð', 'đ', 'ƌ', 'ȡ', 'ɖ', 'ɗ', 'ᵭ', 'ᶁ', 'ᶑ', 'д', 'δ', 'د', 'ض', 'ဍ', 'ဒ', 'დ', 'ｄ'],
             'e'    => ['é', 'è', 'ẻ', 'ẽ', 'ẹ', 'ê', 'ế', 'ề', 'ể', 'ễ', 'ệ', 'ë', 'ē', 'ę', 'ě', 'ĕ', 'ė', 'ε', 'έ', 'ἐ', 'ἑ', 'ἒ', 'ἓ', 'ἔ', 'ἕ', 'ὲ', 'έ', 'е', 'ё', 'э', 'є', 'ə', 'ဧ', 'ေ', 'ဲ', 'ე', 'ए', 'إ', 'ئ', 'ｅ'],
@@ -599,7 +711,7 @@ class Str
      *
      * Note: Adapted from Stringy\Stringy.
      *
-     * @see https://github.com/danielstjules/Stringy/blob/3.0.1/LICENSE.txt
+     * @see https://github.com/danielstjules/Stringy/blob/3.1.0/LICENSE.txt
      *
      * @param  string  $language
      * @return array|null
@@ -610,9 +722,21 @@ class Str
 
         if (! isset($languageSpecific)) {
             $languageSpecific = [
+                'bg' => [
+                    ['х', 'Х', 'щ', 'Щ', 'ъ', 'Ъ', 'ь', 'Ь'],
+                    ['h', 'H', 'sht', 'SHT', 'a', 'А', 'y', 'Y'],
+                ],
+                'da' => [
+                    ['æ', 'ø', 'å', 'Æ', 'Ø', 'Å'],
+                    ['ae', 'oe', 'aa', 'Ae', 'Oe', 'Aa'],
+                ],
                 'de' => [
                     ['ä',  'ö',  'ü',  'Ä',  'Ö',  'Ü'],
                     ['ae', 'oe', 'ue', 'AE', 'OE', 'UE'],
+                ],
+                'ro' => [
+                    ['ă', 'â', 'î', 'ș', 'ț', 'Ă', 'Â', 'Î', 'Ș', 'Ț'],
+                    ['a', 'a', 'i', 's', 't', 'A', 'A', 'I', 'S', 'T'],
                 ],
             ];
         }

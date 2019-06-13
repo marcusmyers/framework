@@ -4,6 +4,7 @@ namespace Illuminate\Http;
 
 use ArrayObject;
 use JsonSerializable;
+use Illuminate\Support\Traits\Macroable;
 use Illuminate\Contracts\Support\Jsonable;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Contracts\Support\Renderable;
@@ -11,7 +12,9 @@ use Symfony\Component\HttpFoundation\Response as BaseResponse;
 
 class Response extends BaseResponse
 {
-    use ResponseTrait;
+    use ResponseTrait, Macroable {
+        Macroable::__call as macroCall;
+    }
 
     /**
      * Set the content on the response.
@@ -22,10 +25,6 @@ class Response extends BaseResponse
     public function setContent($content)
     {
         $this->original = $content;
-
-        if ($this->headers->get('Content-Type') === 'application/json') {
-            $this->headers->remove('Content-Type');
-        }
 
         // If the content is "JSONable" we will set the appropriate header and convert
         // the content to JSON. This is useful when returning something like models

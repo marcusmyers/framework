@@ -7,13 +7,6 @@ use Illuminate\Contracts\Console\Kernel;
 trait RefreshDatabase
 {
     /**
-     * Indicates if the test database has been migrated.
-     *
-     * @var bool
-     */
-    protected static $migrated = false;
-
-    /**
      * Define hooks to migrate the database before and after each test.
      *
      * @return void
@@ -32,9 +25,9 @@ trait RefreshDatabase
      */
     protected function usingInMemoryDatabase()
     {
-        return config('database.connections')[
-            config('database.default')
-        ]['database'] == ':memory:';
+        $default = config('database.default');
+
+        return config("database.connections.$default.database") === ':memory:';
     }
 
     /**
@@ -56,12 +49,15 @@ trait RefreshDatabase
      */
     protected function refreshTestDatabase()
     {
-        if (! static::$migrated) {
-            $this->artisan('migrate:fresh');
+        if (! RefreshDatabaseState::$migrated) {
+            $this->artisan('migrate:fresh', [
+                '--drop-views' => $this->shouldDropViews(),
+                '--drop-types' => $this->shouldDropTypes(),
+            ]);
 
             $this->app[Kernel::class]->setArtisan(null);
 
-            static::$migrated = true;
+            RefreshDatabaseState::$migrated = true;
         }
 
         $this->beginDatabaseTransaction();
@@ -77,12 +73,23 @@ trait RefreshDatabase
         $database = $this->app->make('db');
 
         foreach ($this->connectionsToTransact() as $name) {
-            $database->connection($name)->beginTransaction();
+            $connection = $database->connection($name);
+            $dispatcher = $connection->getEventDispatcher();
+
+            $connection->unsetEventDispatcher();
+            $connection->beginTransaction();
+            $connection->setEventDispatcher($dispatcher);
         }
 
         $this->beforeApplicationDestroyed(function () use ($database) {
             foreach ($this->connectionsToTransact() as $name) {
-                $database->connection($name)->rollBack();
+                $connection = $database->connection($name);
+                $dispatcher = $connection->getEventDispatcher();
+
+                $connection->unsetEventDispatcher();
+                $connection->rollback();
+                $connection->setEventDispatcher($dispatcher);
+                $connection->disconnect();
             }
         });
     }
@@ -96,5 +103,27 @@ trait RefreshDatabase
     {
         return property_exists($this, 'connectionsToTransact')
                             ? $this->connectionsToTransact : [null];
+    }
+
+    /**
+     * Determine if views should be dropped when refreshing the database.
+     *
+     * @return bool
+     */
+    protected function shouldDropViews()
+    {
+        return property_exists($this, 'dropViews')
+                            ? $this->dropViews : false;
+    }
+
+    /**
+     * Determine if types should be dropped when refreshing the database.
+     *
+     * @return bool
+     */
+    protected function shouldDropTypes()
+    {
+        return property_exists($this, 'dropTypes')
+                            ? $this->dropTypes : false;
     }
 }

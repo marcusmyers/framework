@@ -3,14 +3,14 @@
 namespace Illuminate\Tests\Database;
 
 use PHPUnit\Framework\TestCase;
-use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Capsule\Manager as DB;
 use Illuminate\Database\Eloquent\Model as Eloquent;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
 {
-    public function setUp()
+    protected function setUp(): void
     {
         $db = new DB;
 
@@ -63,7 +63,7 @@ class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
      *
      * @return void
      */
-    public function tearDown()
+    protected function tearDown(): void
     {
         $this->schema()->drop('users');
         $this->schema()->drop('posts');
@@ -100,22 +100,41 @@ class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
         $this->assertCount(2, $posts);
     }
 
-    /**
-     * @expectedException \Illuminate\Database\Eloquent\ModelNotFoundException
-     */
+    public function testEagerLoadingARelationWithCustomIntermediateAndLocalKey()
+    {
+        $this->seedData();
+        $posts = HasManyThroughIntermediateTestCountry::with('posts')->first()->posts;
+
+        $this->assertEquals('A title', $posts[0]->title);
+        $this->assertCount(2, $posts);
+    }
+
+    public function testWhereHasOnARelationWithCustomIntermediateAndLocalKey()
+    {
+        $this->seedData();
+        $country = HasManyThroughIntermediateTestCountry::whereHas('posts', function ($query) {
+            $query->where('title', 'A title');
+        })->get();
+
+        $this->assertCount(1, $country);
+    }
+
     public function testFirstOrFailThrowsAnException()
     {
+        $this->expectException(ModelNotFoundException::class);
+        $this->expectExceptionMessage('No query results for model [Illuminate\Tests\Database\HasManyThroughTestPost].');
+
         HasManyThroughTestCountry::create(['id' => 1, 'name' => 'United States of America', 'shortname' => 'us'])
             ->users()->create(['id' => 1, 'email' => 'taylorotwell@gmail.com', 'country_short' => 'us']);
 
         HasManyThroughTestCountry::first()->posts()->firstOrFail();
     }
 
-    /**
-     * @expectedException \Illuminate\Database\Eloquent\ModelNotFoundException
-     */
     public function testFindOrFailThrowsAnException()
     {
+        $this->expectException(ModelNotFoundException::class);
+        $this->expectExceptionMessage('No query results for model [Illuminate\Tests\Database\HasManyThroughTestPost] 1');
+
         HasManyThroughTestCountry::create(['id' => 1, 'name' => 'United States of America', 'shortname' => 'us'])
                                  ->users()->create(['id' => 1, 'email' => 'taylorotwell@gmail.com', 'country_short' => 'us']);
 
@@ -135,7 +154,6 @@ class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
     {
         $this->seedData();
         $post = HasManyThroughTestCountry::first()->posts()->first();
-
         $this->assertEquals([
             'id',
             'user_id',
@@ -144,7 +162,7 @@ class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
             'email',
             'created_at',
             'updated_at',
-            'country_id',
+            'laravel_through_key',
         ], array_keys($post->getAttributes()));
     }
 
@@ -156,8 +174,86 @@ class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
         $this->assertEquals([
             'title',
             'body',
-            'country_id',
+            'laravel_through_key',
         ], array_keys($post->getAttributes()));
+    }
+
+    public function testChunkReturnsCorrectModels()
+    {
+        $this->seedData();
+        $this->seedDataExtended();
+        $country = HasManyThroughTestCountry::find(2);
+
+        $country->posts()->chunk(10, function ($postsChunk) {
+            $post = $postsChunk->first();
+            $this->assertEquals([
+                'id',
+                'user_id',
+                'title',
+                'body',
+                'email',
+                'created_at',
+                'updated_at',
+                'laravel_through_key', ], array_keys($post->getAttributes()));
+        });
+    }
+
+    public function testChunkById()
+    {
+        $this->seedData();
+        $this->seedDataExtended();
+        $country = HasManyThroughTestCountry::find(2);
+
+        $i = 0;
+        $count = 0;
+
+        $country->posts()->chunkById(2, function ($collection) use (&$i, &$count) {
+            $i++;
+            $count += $collection->count();
+        });
+
+        $this->assertEquals(3, $i);
+        $this->assertEquals(6, $count);
+    }
+
+    public function testCursorReturnsCorrectModels()
+    {
+        $this->seedData();
+        $this->seedDataExtended();
+        $country = HasManyThroughTestCountry::find(2);
+
+        $posts = $country->posts()->cursor();
+
+        foreach ($posts as $post) {
+            $this->assertEquals([
+                'id',
+                'user_id',
+                'title',
+                'body',
+                'email',
+                'created_at',
+                'updated_at',
+                'laravel_through_key', ], array_keys($post->getAttributes()));
+        }
+    }
+
+    public function testEachReturnsCorrectModels()
+    {
+        $this->seedData();
+        $this->seedDataExtended();
+        $country = HasManyThroughTestCountry::find(2);
+
+        $country->posts()->each(function ($post) {
+            $this->assertEquals([
+                'id',
+                'user_id',
+                'title',
+                'body',
+                'email',
+                'created_at',
+                'updated_at',
+                'laravel_through_key', ], array_keys($post->getAttributes()));
+        });
     }
 
     public function testIntermediateSoftDeletesAreIgnored()
@@ -191,6 +287,26 @@ class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
                                  ->posts()->createMany([
                 ['title' => 'A title', 'body' => 'A body', 'email' => 'taylorotwell@gmail.com'],
                 ['title' => 'Another title', 'body' => 'Another body', 'email' => 'taylorotwell@gmail.com'],
+            ]);
+    }
+
+    protected function seedDataExtended()
+    {
+        $country = HasManyThroughTestCountry::create(['id' => 2, 'name' => 'United Kingdom', 'shortname' => 'uk']);
+        $country->users()->create(['id' => 2, 'email' => 'example1@gmail.com', 'country_short' => 'uk'])
+            ->posts()->createMany([
+                ['title' => 'Example1 title1', 'body' => 'Example1 body1', 'email' => 'example1post1@gmail.com'],
+                ['title' => 'Example1 title2', 'body' => 'Example1 body2', 'email' => 'example1post2@gmail.com'],
+            ]);
+        $country->users()->create(['id' => 3, 'email' => 'example2@gmail.com', 'country_short' => 'uk'])
+            ->posts()->createMany([
+                ['title' => 'Example2 title1', 'body' => 'Example2 body1', 'email' => 'example2post1@gmail.com'],
+                ['title' => 'Example2 title2', 'body' => 'Example2 body2', 'email' => 'example2post2@gmail.com'],
+            ]);
+        $country->users()->create(['id' => 4, 'email' => 'example3@gmail.com', 'country_short' => 'uk'])
+            ->posts()->createMany([
+                ['title' => 'Example3 title1', 'body' => 'Example3 body1', 'email' => 'example3post1@gmail.com'],
+                ['title' => 'Example3 title2', 'body' => 'Example3 body2', 'email' => 'example3post2@gmail.com'],
             ]);
     }
 
@@ -247,7 +363,7 @@ class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
     /**
      * Get a database connection instance.
      *
-     * @return Connection
+     * @return \Illuminate\Database\Connection
      */
     protected function connection()
     {
@@ -257,7 +373,7 @@ class DatabaseEloquentHasManyThroughIntegrationTest extends TestCase
     /**
      * Get a schema builder instance.
      *
-     * @return Schema\Builder
+     * @return \Illuminate\Database\Schema\Builder
      */
     protected function schema()
     {

@@ -137,13 +137,29 @@ class MorphToMany extends BelongsToMany
         $using = $this->using;
 
         $pivot = $using ? $using::fromRawAttributes($this->parent, $attributes, $this->table, $exists)
-                        : new MorphPivot($this->parent, $attributes, $this->table, $exists);
+                        : MorphPivot::fromAttributes($this->parent, $attributes, $this->table, $exists);
 
         $pivot->setPivotKeys($this->foreignPivotKey, $this->relatedPivotKey)
               ->setMorphType($this->morphType)
               ->setMorphClass($this->morphClass);
 
         return $pivot;
+    }
+
+    /**
+     * Get the pivot columns for the relation.
+     *
+     * "pivot_" is prefixed at each column for easy removal later.
+     *
+     * @return array
+     */
+    protected function aliasedPivotColumns()
+    {
+        $defaults = [$this->foreignPivotKey, $this->relatedPivotKey, $this->morphType];
+
+        return collect(array_merge($defaults, $this->pivotColumns))->map(function ($column) {
+            return $this->table.'.'.$column.' as pivot_'.$column;
+        })->unique()->all();
     }
 
     /**
@@ -164,5 +180,15 @@ class MorphToMany extends BelongsToMany
     public function getMorphClass()
     {
         return $this->morphClass;
+    }
+
+    /**
+     * Get the indicator for a reverse relationship.
+     *
+     * @return bool
+     */
+    public function getInverse()
+    {
+        return $this->inverse;
     }
 }

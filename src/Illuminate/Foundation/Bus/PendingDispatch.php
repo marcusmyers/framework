@@ -7,6 +7,13 @@ use Illuminate\Contracts\Bus\Dispatcher;
 class PendingDispatch
 {
     /**
+     * The job.
+     *
+     * @var mixed
+     */
+    protected $job;
+
+    /**
      * Create a new pending job dispatch.
      *
      * @param  mixed  $job
@@ -44,9 +51,35 @@ class PendingDispatch
     }
 
     /**
+     * Set the desired connection for the chain.
+     *
+     * @param  string|null  $connection
+     * @return $this
+     */
+    public function allOnConnection($connection)
+    {
+        $this->job->allOnConnection($connection);
+
+        return $this;
+    }
+
+    /**
+     * Set the desired queue for the chain.
+     *
+     * @param  string|null  $queue
+     * @return $this
+     */
+    public function allOnQueue($queue)
+    {
+        $this->job->allOnQueue($queue);
+
+        return $this;
+    }
+
+    /**
      * Set the desired delay for the job.
      *
-     * @param  \DateTime|int|null  $delay
+     * @param  \DateTimeInterface|\DateInterval|int|null  $delay
      * @return $this
      */
     public function delay($delay)

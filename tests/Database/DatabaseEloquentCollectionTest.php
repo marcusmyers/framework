@@ -3,13 +3,15 @@
 namespace Illuminate\Tests\Database;
 
 use Mockery as m;
+use LogicException;
 use PHPUnit\Framework\TestCase;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Collection as BaseCollection;
 
 class DatabaseEloquentCollectionTest extends TestCase
 {
-    public function tearDown()
+    protected function tearDown(): void
     {
         m::close();
     }
@@ -44,12 +46,15 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testContainsIndicatesIfModelInArray()
     {
-        $mockModel = m::mock('Illuminate\Database\Eloquent\Model');
-        $mockModel->shouldReceive('getKey')->andReturn(1);
-        $mockModel2 = m::mock('Illuminate\Database\Eloquent\Model');
-        $mockModel2->shouldReceive('getKey')->andReturn(2);
-        $mockModel3 = m::mock('Illuminate\Database\Eloquent\Model');
-        $mockModel3->shouldReceive('getKey')->andReturn(3);
+        $mockModel = m::mock(Model::class);
+        $mockModel->shouldReceive('is')->with($mockModel)->andReturn(true);
+        $mockModel->shouldReceive('is')->andReturn(false);
+        $mockModel2 = m::mock(Model::class);
+        $mockModel2->shouldReceive('is')->with($mockModel2)->andReturn(true);
+        $mockModel2->shouldReceive('is')->andReturn(false);
+        $mockModel3 = m::mock(Model::class);
+        $mockModel3->shouldReceive('is')->with($mockModel3)->andReturn(true);
+        $mockModel3->shouldReceive('is')->andReturn(false);
         $c = new Collection([$mockModel, $mockModel2]);
 
         $this->assertTrue($c->contains($mockModel));
@@ -57,12 +62,26 @@ class DatabaseEloquentCollectionTest extends TestCase
         $this->assertFalse($c->contains($mockModel3));
     }
 
+    public function testContainsIndicatesIfDifferentModelInArray()
+    {
+        $mockModelFoo = m::namedMock('Foo', Model::class);
+        $mockModelFoo->shouldReceive('is')->with($mockModelFoo)->andReturn(true);
+        $mockModelFoo->shouldReceive('is')->andReturn(false);
+        $mockModelBar = m::namedMock('Bar', Model::class);
+        $mockModelBar->shouldReceive('is')->with($mockModelBar)->andReturn(true);
+        $mockModelBar->shouldReceive('is')->andReturn(false);
+        $c = new Collection([$mockModelFoo]);
+
+        $this->assertTrue($c->contains($mockModelFoo));
+        $this->assertFalse($c->contains($mockModelBar));
+    }
+
     public function testContainsIndicatesIfKeyedModelInArray()
     {
-        $mockModel = m::mock('Illuminate\Database\Eloquent\Model');
+        $mockModel = m::mock(Model::class);
         $mockModel->shouldReceive('getKey')->andReturn('1');
         $c = new Collection([$mockModel]);
-        $mockModel2 = m::mock('Illuminate\Database\Eloquent\Model');
+        $mockModel2 = m::mock(Model::class);
         $mockModel2->shouldReceive('getKey')->andReturn('2');
         $c->add($mockModel2);
 
@@ -73,10 +92,10 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testContainsKeyAndValueIndicatesIfModelInArray()
     {
-        $mockModel1 = m::mock('Illuminate\Database\Eloquent\Model');
+        $mockModel1 = m::mock(Model::class);
         $mockModel1->shouldReceive('offsetExists')->with('name')->andReturn(true);
         $mockModel1->shouldReceive('offsetGet')->with('name')->andReturn('Taylor');
-        $mockModel2 = m::mock('Illuminate\Database\Eloquent\Model');
+        $mockModel2 = m::mock(Model::class);
         $mockModel2->shouldReceive('offsetExists')->andReturn(true);
         $mockModel2->shouldReceive('offsetGet')->with('name')->andReturn('Abigail');
         $c = new Collection([$mockModel1, $mockModel2]);
@@ -88,9 +107,9 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testContainsClosureIndicatesIfModelInArray()
     {
-        $mockModel1 = m::mock('Illuminate\Database\Eloquent\Model');
+        $mockModel1 = m::mock(Model::class);
         $mockModel1->shouldReceive('getKey')->andReturn(1);
-        $mockModel2 = m::mock('Illuminate\Database\Eloquent\Model');
+        $mockModel2 = m::mock(Model::class);
         $mockModel2->shouldReceive('getKey')->andReturn(2);
         $c = new Collection([$mockModel1, $mockModel2]);
 
@@ -104,7 +123,7 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testFindMethodFindsModelById()
     {
-        $mockModel = m::mock('Illuminate\Database\Eloquent\Model');
+        $mockModel = m::mock(Model::class);
         $mockModel->shouldReceive('getKey')->andReturn(1);
         $c = new Collection([$mockModel]);
 
@@ -131,15 +150,17 @@ class DatabaseEloquentCollectionTest extends TestCase
         $this->assertCount(1, $c->find([2]));
         $this->assertEquals(2, $c->find([2])->first()->id);
         $this->assertCount(2, $c->find([2, 3, 4]));
+        $this->assertCount(2, $c->find(collect([2, 3, 4])));
+        $this->assertEquals([2, 3], $c->find(collect([2, 3, 4]))->pluck('id')->all());
         $this->assertEquals([2, 3], $c->find([2, 3, 4])->pluck('id')->all());
     }
 
     public function testLoadMethodEagerLoadsGivenRelationships()
     {
-        $c = $this->getMockBuilder('Illuminate\Database\Eloquent\Collection')->setMethods(['first'])->setConstructorArgs([['foo']])->getMock();
-        $mockItem = m::mock('StdClass');
+        $c = $this->getMockBuilder(Collection::class)->setMethods(['first'])->setConstructorArgs([['foo']])->getMock();
+        $mockItem = m::mock(stdClass::class);
         $c->expects($this->once())->method('first')->will($this->returnValue($mockItem));
-        $mockItem->shouldReceive('newQuery')->once()->andReturn($mockItem);
+        $mockItem->shouldReceive('newQueryWithoutRelationships')->once()->andReturn($mockItem);
         $mockItem->shouldReceive('with')->with(['bar', 'baz'])->andReturn($mockItem);
         $mockItem->shouldReceive('eagerLoadRelations')->once()->with(['foo'])->andReturn(['results']);
         $c->load('bar', 'baz');
@@ -149,13 +170,13 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testCollectionDictionaryReturnsModelKeys()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
         $one->shouldReceive('getKey')->andReturn(1);
 
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $two = m::mock(Model::class);
         $two->shouldReceive('getKey')->andReturn(2);
 
-        $three = m::mock('Illuminate\Database\Eloquent\Model');
+        $three = m::mock(Model::class);
         $three->shouldReceive('getKey')->andReturn(3);
 
         $c = new Collection([$one, $two, $three]);
@@ -165,13 +186,13 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testCollectionMergesWithGivenCollection()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
         $one->shouldReceive('getKey')->andReturn(1);
 
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $two = m::mock(Model::class);
         $two->shouldReceive('getKey')->andReturn(2);
 
-        $three = m::mock('Illuminate\Database\Eloquent\Model');
+        $three = m::mock(Model::class);
         $three->shouldReceive('getKey')->andReturn(3);
 
         $c1 = new Collection([$one, $two]);
@@ -182,8 +203,8 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testMap()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
+        $two = m::mock(Model::class);
 
         $c = new Collection([$one, $two]);
 
@@ -197,8 +218,8 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testMappingToNonModelsReturnsABaseCollection()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
+        $two = m::mock(Model::class);
 
         $c = (new Collection([$one, $two]))->map(function ($item) {
             return 'not-a-model';
@@ -209,13 +230,13 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testCollectionDiffsWithGivenCollection()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
         $one->shouldReceive('getKey')->andReturn(1);
 
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $two = m::mock(Model::class);
         $two->shouldReceive('getKey')->andReturn(2);
 
-        $three = m::mock('Illuminate\Database\Eloquent\Model');
+        $three = m::mock(Model::class);
         $three->shouldReceive('getKey')->andReturn(3);
 
         $c1 = new Collection([$one, $two]);
@@ -224,15 +245,37 @@ class DatabaseEloquentCollectionTest extends TestCase
         $this->assertEquals(new Collection([$one]), $c1->diff($c2));
     }
 
+    public function testCollectionReturnsDuplicateBasedOnlyOnKeys()
+    {
+        $one = new TestEloquentCollectionModel();
+        $two = new TestEloquentCollectionModel();
+        $three = new TestEloquentCollectionModel();
+        $four = new TestEloquentCollectionModel();
+        $one->id = 1;
+        $one->someAttribute = '1';
+        $two->id = 1;
+        $two->someAttribute = '2';
+        $three->id = 1;
+        $three->someAttribute = '3';
+        $four->id = 2;
+        $four->someAttribute = '4';
+
+        $duplicates = Collection::make([$one, $two, $three, $four])->duplicates()->all();
+        $this->assertSame([1 => $two, 2 => $three], $duplicates);
+
+        $duplicates = Collection::make([$one, $two, $three, $four])->duplicatesStrict()->all();
+        $this->assertSame([1 => $two, 2 => $three], $duplicates);
+    }
+
     public function testCollectionIntersectsWithGivenCollection()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
         $one->shouldReceive('getKey')->andReturn(1);
 
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $two = m::mock(Model::class);
         $two->shouldReceive('getKey')->andReturn(2);
 
-        $three = m::mock('Illuminate\Database\Eloquent\Model');
+        $three = m::mock(Model::class);
         $three->shouldReceive('getKey')->andReturn(3);
 
         $c1 = new Collection([$one, $two]);
@@ -243,10 +286,10 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testCollectionReturnsUniqueItems()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
         $one->shouldReceive('getKey')->andReturn(1);
 
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $two = m::mock(Model::class);
         $two->shouldReceive('getKey')->andReturn(2);
 
         $c = new Collection([$one, $two, $two]);
@@ -254,15 +297,37 @@ class DatabaseEloquentCollectionTest extends TestCase
         $this->assertEquals(new Collection([$one, $two]), $c->unique());
     }
 
+    public function testCollectionReturnsUniqueStrictBasedOnKeysOnly()
+    {
+        $one = new TestEloquentCollectionModel();
+        $two = new TestEloquentCollectionModel();
+        $three = new TestEloquentCollectionModel();
+        $four = new TestEloquentCollectionModel();
+        $one->id = 1;
+        $one->someAttribute = '1';
+        $two->id = 1;
+        $two->someAttribute = '2';
+        $three->id = 1;
+        $three->someAttribute = '3';
+        $four->id = 2;
+        $four->someAttribute = '4';
+
+        $uniques = Collection::make([$one, $two, $three, $four])->unique()->all();
+        $this->assertSame([$three, $four], $uniques);
+
+        $uniques = Collection::make([$one, $two, $three, $four])->unique(null, true)->all();
+        $this->assertSame([$three, $four], $uniques);
+    }
+
     public function testOnlyReturnsCollectionWithGivenModelKeys()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
         $one->shouldReceive('getKey')->andReturn(1);
 
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $two = m::mock(Model::class);
         $two->shouldReceive('getKey')->andReturn(2);
 
-        $three = m::mock('Illuminate\Database\Eloquent\Model');
+        $three = m::mock(Model::class);
         $three->shouldReceive('getKey')->andReturn(3);
 
         $c = new Collection([$one, $two, $three]);
@@ -274,13 +339,13 @@ class DatabaseEloquentCollectionTest extends TestCase
 
     public function testExceptReturnsCollectionWithoutGivenModelKeys()
     {
-        $one = m::mock('Illuminate\Database\Eloquent\Model');
+        $one = m::mock(Model::class);
         $one->shouldReceive('getKey')->andReturn(1);
 
-        $two = m::mock('Illuminate\Database\Eloquent\Model');
+        $two = m::mock(Model::class);
         $two->shouldReceive('getKey')->andReturn('2');
 
-        $three = m::mock('Illuminate\Database\Eloquent\Model');
+        $three = m::mock(Model::class);
         $three->shouldReceive('getKey')->andReturn(3);
 
         $c = new Collection([$one, $two, $three]);
@@ -332,17 +397,23 @@ class DatabaseEloquentCollectionTest extends TestCase
         $this->assertEquals(TestEloquentCollectionModel::class, $c->getQueueableClass());
     }
 
-    /**
-     * @expectedException \LogicException
-     */
     public function testQueueableCollectionImplementationThrowsExceptionOnMultipleModelTypes()
     {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Queueing collections with multiple model types is not supported.');
+
         $c = new Collection([new TestEloquentCollectionModel, (object) ['id' => 'something']]);
         $c->getQueueableClass();
     }
+
+    public function testEmptyCollectionStayEmptyOnFresh()
+    {
+        $c = new Collection;
+        $this->assertEquals($c, $c->fresh());
+    }
 }
 
-class TestEloquentCollectionModel extends \Illuminate\Database\Eloquent\Model
+class TestEloquentCollectionModel extends Model
 {
     protected $visible = ['visible'];
     protected $hidden = ['hidden'];

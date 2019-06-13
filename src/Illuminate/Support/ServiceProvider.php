@@ -3,6 +3,7 @@
 namespace Illuminate\Support;
 
 use Illuminate\Console\Application as Artisan;
+use Illuminate\Contracts\Support\DeferrableProvider;
 
 abstract class ServiceProvider
 {
@@ -12,13 +13,6 @@ abstract class ServiceProvider
      * @var \Illuminate\Contracts\Foundation\Application
      */
     protected $app;
-
-    /**
-     * Indicates if loading of the provider is deferred.
-     *
-     * @var bool
-     */
-    protected $defer = false;
 
     /**
      * The paths that should be published.
@@ -43,6 +37,16 @@ abstract class ServiceProvider
     public function __construct($app)
     {
         $this->app = $app;
+    }
+
+    /**
+     * Register any application services.
+     *
+     * @return void
+     */
+    public function register()
+    {
+        //
     }
 
     /**
@@ -75,14 +79,18 @@ abstract class ServiceProvider
     /**
      * Register a view file namespace.
      *
-     * @param  string  $path
+     * @param  string|array  $path
      * @param  string  $namespace
      * @return void
      */
     protected function loadViewsFrom($path, $namespace)
     {
-        if (is_dir($appPath = $this->app->resourcePath().'/views/vendor/'.$namespace)) {
-            $this->app['view']->addNamespace($namespace, $appPath);
+        if (is_array($this->app->config['view']['paths'])) {
+            foreach ($this->app->config['view']['paths'] as $viewPath) {
+                if (is_dir($appPath = $viewPath.'/vendor/'.$namespace)) {
+                    $this->app['view']->addNamespace($namespace, $appPath);
+                }
+            }
         }
 
         $this->app['view']->addNamespace($namespace, $path);
@@ -98,6 +106,17 @@ abstract class ServiceProvider
     protected function loadTranslationsFrom($path, $namespace)
     {
         $this->app['translator']->addNamespace($namespace, $path);
+    }
+
+    /**
+     * Register a JSON translation file path.
+     *
+     * @param  string  $path
+     * @return void
+     */
+    protected function loadJsonTranslationsFrom($path)
+    {
+        $this->app['translator']->addJsonPath($path);
     }
 
     /**
@@ -119,17 +138,19 @@ abstract class ServiceProvider
      * Register paths to be published by the publish command.
      *
      * @param  array  $paths
-     * @param  string  $group
+     * @param  mixed  $groups
      * @return void
      */
-    protected function publishes(array $paths, $group = null)
+    protected function publishes(array $paths, $groups = null)
     {
         $this->ensurePublishArrayInitialized($class = static::class);
 
         static::$publishes[$class] = array_merge(static::$publishes[$class], $paths);
 
-        if ($group) {
-            $this->addPublishGroup($group, $paths);
+        if (! is_null($groups)) {
+            foreach ((array) $groups as $group) {
+                $this->addPublishGroup($group, $paths);
+            }
         }
     }
 
@@ -203,7 +224,7 @@ abstract class ServiceProvider
     }
 
     /**
-     * Get the paths for the provdider and group.
+     * Get the paths for the provider and group.
      *
      * @param  string  $provider
      * @param  string  $group
@@ -280,6 +301,6 @@ abstract class ServiceProvider
      */
     public function isDeferred()
     {
-        return $this->defer;
+        return $this instanceof DeferrableProvider;
     }
 }

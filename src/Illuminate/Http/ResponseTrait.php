@@ -49,7 +49,9 @@ trait ResponseTrait
      */
     public function getOriginalContent()
     {
-        return $this->original;
+        $original = $this->original;
+
+        return $original instanceof self ? $original->{__FUNCTION__}() : $original;
     }
 
     /**
@@ -112,6 +114,16 @@ trait ResponseTrait
         $this->headers->setCookie($cookie);
 
         return $this;
+    }
+
+    /**
+     * Get the callback of the response.
+     *
+     * @return string|null
+     */
+    public function getCallback()
+    {
+        return $this->callback ?? null;
     }
 
     /**

@@ -2,9 +2,8 @@
 
 namespace Illuminate\Broadcasting;
 
-use Pusher;
 use Closure;
-use Illuminate\Support\Arr;
+use Pusher\Pusher;
 use Psr\Log\LoggerInterface;
 use InvalidArgumentException;
 use Illuminate\Broadcasting\Broadcasters\LogBroadcaster;
@@ -14,12 +13,15 @@ use Illuminate\Broadcasting\Broadcasters\RedisBroadcaster;
 use Illuminate\Broadcasting\Broadcasters\PusherBroadcaster;
 use Illuminate\Contracts\Broadcasting\Factory as FactoryContract;
 
+/**
+ * @mixin \Illuminate\Contracts\Broadcasting\Broadcaster
+ */
 class BroadcastManager implements FactoryContract
 {
     /**
      * The application instance.
      *
-     * @var \Illuminate\Foundation\Application
+     * @var \Illuminate\Contracts\Foundation\Application
      */
     protected $app;
 
@@ -40,7 +42,7 @@ class BroadcastManager implements FactoryContract
     /**
      * Create a new manager instance.
      *
-     * @param  \Illuminate\Foundation\Application  $app
+     * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
      */
     public function __construct($app)
@@ -63,7 +65,10 @@ class BroadcastManager implements FactoryContract
         $attributes = $attributes ?: ['middleware' => ['web']];
 
         $this->app['router']->group($attributes, function ($router) {
-            $router->post('/broadcasting/auth', BroadcastController::class.'@authenticate');
+            $router->match(
+                ['get', 'post'], '/broadcasting/auth',
+                '\\'.BroadcastController::class.'@authenticate'
+            );
         });
     }
 
@@ -81,9 +86,7 @@ class BroadcastManager implements FactoryContract
 
         $request = $request ?: $this->app['request'];
 
-        if ($request->hasHeader('X-Socket-ID')) {
-            return $request->header('X-Socket-ID');
-        }
+        return $request->header('X-Socket-ID');
     }
 
     /**
@@ -113,7 +116,9 @@ class BroadcastManager implements FactoryContract
 
         $queue = null;
 
-        if (isset($event->broadcastQueue)) {
+        if (method_exists($event, 'broadcastQueue')) {
+            $queue = $event->broadcastQueue();
+        } elseif (isset($event->broadcastQueue)) {
             $queue = $event->broadcastQueue;
         } elseif (isset($event->queue)) {
             $queue = $event->queue;
@@ -127,7 +132,7 @@ class BroadcastManager implements FactoryContract
     /**
      * Get a driver instance.
      *
-     * @param  string  $driver
+     * @param  string|null  $driver
      * @return mixed
      */
     public function connection($driver = null)
@@ -138,7 +143,7 @@ class BroadcastManager implements FactoryContract
     /**
      * Get a driver instance.
      *
-     * @param  string  $name
+     * @param  string|null  $name
      * @return mixed
      */
     public function driver($name = null)
@@ -156,11 +161,11 @@ class BroadcastManager implements FactoryContract
      */
     protected function get($name)
     {
-        return isset($this->drivers[$name]) ? $this->drivers[$name] : $this->resolve($name);
+        return $this->drivers[$name] ?? $this->resolve($name);
     }
 
     /**
-     * Resolve the given store.
+     * Resolve the given broadcaster.
      *
      * @param  string  $name
      * @return \Illuminate\Contracts\Broadcasting\Broadcaster
@@ -170,10 +175,6 @@ class BroadcastManager implements FactoryContract
     protected function resolve($name)
     {
         $config = $this->getConfig($name);
-
-        if (is_null($config)) {
-            throw new InvalidArgumentException("Broadcaster [{$name}] is not defined.");
-        }
 
         if (isset($this->customCreators[$config['driver']])) {
             return $this->callCustomCreator($config);
@@ -207,10 +208,16 @@ class BroadcastManager implements FactoryContract
      */
     protected function createPusherDriver(array $config)
     {
-        return new PusherBroadcaster(
-            new Pusher($config['key'], $config['secret'],
-            $config['app_id'], Arr::get($config, 'options', []))
+        $pusher = new Pusher(
+            $config['key'], $config['secret'],
+            $config['app_id'], $config['options'] ?? []
         );
+
+        if ($config['log'] ?? false) {
+            $pusher->setLogger($this->app->make(LoggerInterface::class));
+        }
+
+        return new PusherBroadcaster($pusher);
     }
 
     /**
@@ -222,7 +229,7 @@ class BroadcastManager implements FactoryContract
     protected function createRedisDriver(array $config)
     {
         return new RedisBroadcaster(
-            $this->app->make('redis'), Arr::get($config, 'connection')
+            $this->app->make('redis'), $config['connection'] ?? null
         );
     }
 
@@ -258,7 +265,11 @@ class BroadcastManager implements FactoryContract
      */
     protected function getConfig($name)
     {
-        return $this->app['config']["broadcasting.connections.{$name}"];
+        if (! is_null($name) && $name !== 'null') {
+            return $this->app['config']["broadcasting.connections.{$name}"];
+        }
+
+        return ['driver' => 'null'];
     }
 
     /**
